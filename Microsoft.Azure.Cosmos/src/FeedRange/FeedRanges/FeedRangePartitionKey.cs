@@ -8,6 +8,7 @@ namespace Microsoft.Azure.Cosmos
     using System.Threading;
     using System.Threading.Tasks;
     using Microsoft.Azure.Cosmos.Routing;
+    using Microsoft.Azure.Documents.Routing;
 
     /// <summary>
     /// FeedRange that represents an exact Partition Key value.
@@ -24,12 +25,32 @@ namespace Microsoft.Azure.Cosmos
         public override Task<List<Documents.Routing.Range<string>>> GetEffectiveRangesAsync(
             IRoutingMapProvider routingMapProvider,
             string containerRid,
-            Documents.PartitionKeyDefinition partitionKeyDefinition) => Task.FromResult(
-                new List<Documents.Routing.Range<string>>
+            Documents.PartitionKeyDefinition partitionKeyDefinition)
+        {
+            if (partitionKeyDefinition.Kind == Documents.PartitionKind.MultiHash)
+            {
+                List<IPartitionKeyComponent> currentPartitionKeyComponents = new List<IPartitionKeyComponent>(this.PartitionKey.InternalKey.Components);
+                int unfilledPartitionKeys = partitionKeyDefinition.Paths.Count - this.PartitionKey.InternalKey.Components.Count;
+                for (int i = 0; i < unfilledPartitionKeys; i++)
                 {
+                    currentPartitionKeyComponents.Add(new InfinityPartitionKeyComponent());
+                }
+
+                PartitionKeyInternal maxPartitionKey = new PartitionKeyInternal(currentPartitionKeyComponents);
+                return Task.FromResult(
+                    new List<Documents.Routing.Range<string>>
+                    {
+                        new Documents.Routing.Range<string>(this.PartitionKey.InternalKey.GetEffectivePartitionKeyString(partitionKeyDefinition), maxPartitionKey.GetEffectivePartitionKeyString(partitionKeyDefinition), true, false)
+                    });
+            }
+
+            return Task.FromResult(
+            new List<Documents.Routing.Range<string>>
+            {
                     Documents.Routing.Range<string>.GetPointRange(
                         this.PartitionKey.InternalKey.GetEffectivePartitionKeyString(partitionKeyDefinition))
-                });
+            });
+        }
 
         public override async Task<IEnumerable<string>> GetPartitionKeyRangesAsync(
             IRoutingMapProvider routingMapProvider,
